@@ -1,0 +1,9 @@
+mlflow
+pandas
+numpy
+scikit-learn
+pyyaml
+optuna
+joblib
+matplotlib
+seaborn

@@ -1,0 +1,13 @@
+project:
+  name: smsml-project
+  experiment_name: student-performance
+  random_state: 42
+
+paths:
+  raw_data_dir: data/raw
+  processed_data_dir: data/processed
+  artifact_dir: artifacts
+  mlruns_dir: mlruns
+
+mlflow:
+  tracking_uri: http://127.0.0.1:5000
