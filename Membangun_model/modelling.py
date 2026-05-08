@@ -1,34 +1,48 @@
+import argparse
+from pathlib import Path
+
 import mlflow
 import mlflow.sklearn
 import pandas as pd
 
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import (
-    accuracy_score,
-    f1_score,
-    precision_score,
-    recall_score
-)
+from xgboost import XGBClassifier
+
 from sklearn.preprocessing import LabelEncoder
 
-import argparse
-
-# ========================
-# 1. Argument Parser
-# ========================
-parser = argparse.ArgumentParser()
-
-parser.add_argument(
-    "--dataset",
-    type=str,
-    default="data/student_performance_data.csv"
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    roc_auc_score,
+    classification_report,
+    confusion_matrix
 )
+
+from mlflow.models.signature import infer_signature
+
+# =========================================================
+# CONFIGURATION
+# =========================================================
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+TRAIN_DIR = (
+    BASE_DIR
+    / "artifacts"
+    / "datasets"
+)
+
+# =========================================================
+# ARGUMENT PARSER
+# =========================================================
+
+parser = argparse.ArgumentParser()
 
 parser.add_argument(
     "--n_estimators",
     type=int,
-    default=100
+    default=200
 )
 
 parser.add_argument(
@@ -37,81 +51,134 @@ parser.add_argument(
     default=10
 )
 
+parser.add_argument(
+    "--learning_rate",
+    type=float,
+    default=0.1
+)
+
 args = parser.parse_args()
 
-# ========================
-# 2. Setup MLflow
-# ========================
-mlflow.set_tracking_uri("http://127.0.0.1:5000/")
-mlflow.set_experiment("smsml-experiment")
+# =========================================================
+# SETUP MLFLOW
+# =========================================================
 
-# ========================
-# 3. Load data
-# ========================
-df = pd.read_csv(args.dataset)
-
-# drop leakage
-df = df.drop(
-    columns=["overall_score", "student_id"],
-    errors="ignore"
+mlflow.set_tracking_uri(
+    "http://127.0.0.1:5000"
 )
 
-# ========================
-# 4. Encoding
-# ========================
-cat_cols = df.select_dtypes(
-    include=["object", "category"]
+mlflow.set_experiment(
+    "smsml-experiment"
+)
+
+# =========================================================
+# LOAD DATASET
+# =========================================================
+
+print("\nLoading training artifacts...")
+
+X_train = pd.read_csv(
+    TRAIN_DIR / "X_train.csv"
+)
+
+X_test = pd.read_csv(
+    TRAIN_DIR / "X_test.csv"
+)
+
+y_train = pd.read_csv(
+    TRAIN_DIR / "y_train.csv"
+).squeeze()
+
+y_test = pd.read_csv(
+    TRAIN_DIR / "y_test.csv"
+).squeeze()
+
+print("\nDataset berhasil dimuat.")
+print(f"X_train : {X_train.shape}")
+print(f"X_test  : {X_test.shape}")
+
+# =========================================================
+# ENCODE TARGET
+# =========================================================
+
+label_encoder = LabelEncoder()
+
+y_train = label_encoder.fit_transform(
+    y_train
+)
+
+y_test = label_encoder.transform(
+    y_test
+)
+
+print("\nTarget berhasil di-encode.")
+
+# =========================================================
+# ENCODE CATEGORICAL FEATURES
+# =========================================================
+
+cat_cols = X_train.select_dtypes(
+    include=["object"]
 ).columns
 
-le_dict = {}
-
 for col in cat_cols:
-    le = LabelEncoder()
 
-    df[col] = le.fit_transform(df[col])
+    encoder = LabelEncoder()
 
-    le_dict[col] = le
-
-# ========================
-# 5. Split data
-# ========================
-X = df.drop("grade", axis=1)
-y = df["grade"]
-
-X_train, X_test, y_train, y_test = train_test_split(
-    X,
-    y,
-    test_size=0.2,
-    random_state=42
-)
-
-# ========================
-# 6. Training + Logging
-# ========================
-with mlflow.start_run():
-
-    # Model
-    model = RandomForestClassifier(
-        n_estimators=args.n_estimators,
-        max_depth=args.max_depth,
-        random_state=42
+    X_train[col] = encoder.fit_transform(
+        X_train[col]
     )
 
-    # Training
-    model.fit(X_train, y_train)
+    X_test[col] = encoder.transform(
+        X_test[col]
+    )
 
-    # Prediction
-    y_pred = model.predict(X_test)
+print("\nCategorical features berhasil di-encode.")
 
-    # ========================
-    # Metrics
-    # ========================
-    acc = accuracy_score(y_test, y_pred)
+# =========================================================
+# TRAINING
+# =========================================================
 
-    f1 = f1_score(
+with mlflow.start_run():
+
+    print("\nTraining model XGBoost...")
+
+    model = XGBClassifier(
+        n_estimators=args.n_estimators,
+        max_depth=args.max_depth,
+        learning_rate=args.learning_rate,
+        random_state=42,
+        eval_metric="mlogloss"
+    )
+
+    # =====================================================
+    # TRAIN MODEL
+    # =====================================================
+
+    model.fit(
+        X_train,
+        y_train
+    )
+
+    # =====================================================
+    # PREDICTION
+    # =====================================================
+
+    y_pred = model.predict(
+        X_test
+    )
+
+    y_prob = model.predict_proba(
+        X_test
+    )
+
+    # =====================================================
+    # EVALUATION
+    # =====================================================
+
+    accuracy = accuracy_score(
         y_test,
-        y_pred,
-        average="macro"
+        y_pred
     )
 
     precision = precision_score(
@@ -126,14 +193,55 @@ with mlflow.start_run():
         average="macro"
     )
 
-    # ========================
-    # Log Parameters
-    # ========================
-    mlflow.log_param("model", "RandomForest")
+    f1 = f1_score(
+        y_test,
+        y_pred,
+        average="macro"
+    )
+
+    roc_auc = roc_auc_score(
+        y_test,
+        y_prob,
+        multi_class="ovr"
+    )
+
+    # =====================================================
+    # PRINT RESULT
+    # =====================================================
+
+    print("\n===== EVALUATION RESULT =====")
+
+    print(f"Accuracy  : {accuracy:.4f}")
+    print(f"Precision : {precision:.4f}")
+    print(f"Recall    : {recall:.4f}")
+    print(f"F1 Score  : {f1:.4f}")
+    print(f"ROC AUC   : {roc_auc:.4f}")
+
+    print("\n===== CLASSIFICATION REPORT =====")
+
+    print(
+        classification_report(
+            y_test,
+            y_pred
+        )
+    )
+
+    print("\n===== CONFUSION MATRIX =====")
+
+    print(
+        confusion_matrix(
+            y_test,
+            y_pred
+        )
+    )
+
+    # =====================================================
+    # LOG PARAMETERS
+    # =====================================================
 
     mlflow.log_param(
-        "dataset",
-        args.dataset
+        "model",
+        "XGBoost"
     )
 
     mlflow.log_param(
@@ -146,14 +254,18 @@ with mlflow.start_run():
         args.max_depth
     )
 
-    # ========================
-    # Log Metrics
-    # ========================
-    mlflow.log_metric("accuracy", acc)
+    mlflow.log_param(
+        "learning_rate",
+        args.learning_rate
+    )
+
+    # =====================================================
+    # LOG METRICS
+    # =====================================================
 
     mlflow.log_metric(
-        "f1_macro",
-        f1
+        "accuracy",
+        accuracy
     )
 
     mlflow.log_metric(
@@ -166,36 +278,48 @@ with mlflow.start_run():
         recall
     )
 
-    # ========================
-    # Log Model
-    # ========================
-    mlflow.sklearn.log_model(
-        model,
-        "model"
+    mlflow.log_metric(
+        "f1_score",
+        f1
     )
 
-    # ========================
-    # Output
-    # ========================
-    print("\n===== TRAINING SELESAI =====")
+    mlflow.log_metric(
+        "roc_auc",
+        roc_auc
+    )
 
-    print(f"Accuracy      : {acc:.4f}")
-    print(f"F1 Macro      : {f1:.4f}")
-    print(f"Precision     : {precision:.4f}")
-    print(f"Recall        : {recall:.4f}")
+    # =====================================================
+    # MODEL SIGNATURE
+    # =====================================================
 
-    print("\n===== PARAMETER =====")
+    signature = infer_signature(
+        X_train,
+        y_pred
+    )
 
-    print(f"Dataset       : {args.dataset}")
-    print(f"n_estimators  : {args.n_estimators}")
-    print(f"max_depth     : {args.max_depth}")
+    # =====================================================
+    # LOG MODEL TO MLFLOW
+    # =====================================================
 
-# ========================
-# Run Example
-# ========================
+    mlflow.sklearn.log_model(
+        sk_model=model,
+        artifact_path="model",
+        signature=signature
+    )
+
+    print("\nModel berhasil di-log ke MLflow.")
+
+    print(
+        "\nMLflow tracking completed successfully."
+    )
+
+# =========================================================
+# RUN EXAMPLE
+# =========================================================
+
 # python Membangun_model/modelling.py
 #
 # python Membangun_model/modelling.py \
-# --dataset data/student_performance_data.csv \
-# --n_estimators 200 \
-# --max_depth 20
+# --n_estimators 300 \
+# --max_depth 15 \
+# --learning_rate 0.05
