@@ -161,7 +161,51 @@ for col in cat_cols:
     )
 
 print("\nCategorical features berhasil di-encode.")
+# =========================================================
+# SAVE PREPROCESSING METADATA
+# =========================================================
 
+metadata_dir = (
+    BASE_DIR
+    / "preprocessing"
+    / "artifacts"
+    / "metadata"
+)
+
+metadata_dir.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+metadata = {
+
+    "feature_columns":
+        X_train.columns.tolist(),
+
+    "categorical_columns":
+        cat_cols.tolist()
+}
+
+metadata_path = (
+    metadata_dir
+    / "preprocessing_metadata.json"
+)
+
+with open(
+    metadata_path,
+    "w",
+    encoding="utf-8"
+) as file:
+
+    json.dump(
+        metadata,
+        file,
+        indent=4
+    )
+
+print(
+    "\npreprocessing_metadata.json berhasil disimpan."
+)
 # =========================================================
 # HYPERPARAMETER SEARCH SPACE
 # =========================================================

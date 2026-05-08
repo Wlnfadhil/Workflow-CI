@@ -160,11 +160,49 @@ print("\nTarget berhasil di-encode.")
 
 # =========================================================
 # ENCODE CATEGORICAL FEATURES
+# + SAVE PREPROCESSING METADATA
+# + SAVE ENCODERS
 # =========================================================
+
+import joblib
 
 cat_cols = X_train.select_dtypes(
     include=["object"]
 ).columns
+
+# =========================================================
+# CREATE ARTIFACT DIRECTORIES
+# =========================================================
+
+METADATA_DIR = (
+    BASE_DIR
+    / "preprocessing"
+    / "artifacts"
+    / "metadata"
+)
+
+ENCODER_DIR = (
+    BASE_DIR
+    / "preprocessing"
+    / "artifacts"
+    / "encoders"
+)
+
+METADATA_DIR.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+ENCODER_DIR.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+# =========================================================
+# FEATURE ENCODERS
+# =========================================================
+
+feature_encoders = {}
 
 for col in cat_cols:
 
@@ -178,13 +216,115 @@ for col in cat_cols:
         X_test[col]
     )
 
+    feature_encoders[col] = encoder
+
 print("\nCategorical features berhasil di-encode.")
+
+# =========================================================
+# SAVE TARGET LABEL ENCODER
+# =========================================================
+
+target_encoder_path = (
+    ENCODER_DIR
+    / "target_label_encoder.pkl"
+)
+
+joblib.dump(
+    label_encoder,
+    target_encoder_path
+)
+
+print(
+    "\nTarget label encoder berhasil disimpan."
+)
+
+# =========================================================
+# SAVE FEATURE LABEL ENCODERS
+# =========================================================
+
+feature_encoder_path = (
+    ENCODER_DIR
+    / "feature_label_encoders.pkl"
+)
+
+joblib.dump(
+    feature_encoders,
+    feature_encoder_path
+)
+
+print(
+    "\nFeature label encoders berhasil disimpan."
+)
+
+# =========================================================
+# SAVE PREPROCESSING METADATA
+# =========================================================
+
+numeric_columns = X_train.select_dtypes(
+    include=["int64", "float64"]
+).columns.tolist()
+
+metadata = {
+
+    "numeric_columns":
+        numeric_columns,
+
+    "categorical_columns":
+        cat_cols.tolist(),
+
+    "feature_columns":
+        X_train.columns.tolist(),
+
+    "target_classes":
+        label_encoder.classes_.tolist()
+}
+
+metadata_path = (
+    METADATA_DIR
+    / "preprocessing_metadata.json"
+)
+
+with open(
+    metadata_path,
+    "w",
+    encoding="utf-8"
+) as file:
+
+    json.dump(
+        metadata,
+        file,
+        indent=4
+    )
+
+print(
+    "\npreprocessing_metadata.json berhasil disimpan."
+)
 
 # =========================================================
 # TRAINING
 # =========================================================
 
 with mlflow.start_run():
+
+    # =====================================================
+    # LOG PREPROCESSING ARTIFACTS TO MLFLOW
+    # =====================================================
+
+    mlflow.log_artifact(
+        str(metadata_path)
+    )
+
+    mlflow.log_artifact(
+        str(target_encoder_path)
+    )
+
+    mlflow.log_artifact(
+        str(feature_encoder_path)
+    )
+
+    print(
+        "\nMetadata dan encoder berhasil di-log ke MLflow."
+    )
 
     print("\nTraining model XGBoost...")
 
