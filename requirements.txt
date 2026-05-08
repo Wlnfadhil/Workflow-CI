@@ -1,9 +1,6 @@
-mlflow
-pandas
-numpy
-scikit-learn
-pyyaml
-optuna
-joblib
-matplotlib
-seaborn
+joblib==1.5.3
+mlflow==3.11.1
+mlflow_skinny==3.11.1
+mlflow_tracing==3.11.1
+pandas==3.0.2
+scikit_learn==1.8.0

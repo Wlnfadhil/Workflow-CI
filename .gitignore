@@ -8,3 +8,5 @@ artifacts/
 data/raw/
 data/processed/
 .DS_Store
+# Kaggle specific files
+kaggle.json
