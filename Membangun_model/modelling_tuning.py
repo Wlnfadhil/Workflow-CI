@@ -43,6 +43,12 @@ ARTIFACT_DIR.mkdir(
 )
 
 # =========================================================
+# DAGSHUB SWITCH
+# =========================================================
+
+USE_DAGSHUB = True
+
+# =========================================================
 # ARGUMENT PARSER
 # =========================================================
 
@@ -57,25 +63,36 @@ parser.add_argument(
 args = parser.parse_args()
 
 # =========================================================
-# DAGSHUB INITIALIZATION
+# SETUP MLFLOW
 # =========================================================
 
-dagshub.init(
-    repo_owner="Wlnfadhil",
-    repo_name="SMSML_WildanFadhilNazaruddin_Dicoding",
-    mlflow=True
-)
+if USE_DAGSHUB:
 
-# =========================================================
-# SETUP LOCAL MLFLOW
-# =========================================================
+    dagshub.init(
+        repo_owner="Wlnfadhil",
+        repo_name="SMSML_WildanFadhilNazaruddin_Dicoding",
+        mlflow=True
+    )
 
-mlflow.set_tracking_uri(
-    "http://127.0.0.1:5000"
-)
+    mlflow.set_tracking_uri(
+        "https://dagshub.com/Wlnfadhil/SMSML_WildanFadhilNazaruddin_Dicoding.mlflow"
+    )
+
+    print("\nUsing DagsHub MLflow Tracking")
+
+else:
+
+    mlflow.set_tracking_uri(
+        "http://127.0.0.1:5000"
+    )
+
+    print("\nUsing Local MLflow Tracking")
 
 print("\nTracking URI:")
 print(mlflow.get_tracking_uri())
+
+print("\nUSE_DAGSHUB:")
+print(USE_DAGSHUB)
 
 mlflow.set_experiment(
     args.experiment_name
@@ -172,6 +189,7 @@ learning_rate_list = [
 # =========================================================
 
 best_accuracy = 0
+
 best_configuration = {}
 
 # =========================================================
@@ -399,4 +417,12 @@ print(
 # RUN EXAMPLE
 # =========================================================
 
+# DagsHub mode
+# python Membangun_model/modelling_tuning.py
+
+# Localhost mode
+# ubah:
+# USE_DAGSHUB = False
+#
+# lalu jalankan:
 # python Membangun_model/modelling_tuning.py

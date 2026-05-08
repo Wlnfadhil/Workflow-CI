@@ -1,9 +1,12 @@
 import argparse
+import json
 from pathlib import Path
 
+import dagshub
 import mlflow
 import mlflow.sklearn
 import pandas as pd
+import matplotlib.pyplot as plt
 
 from xgboost import XGBClassifier
 
@@ -16,7 +19,8 @@ from sklearn.metrics import (
     f1_score,
     roc_auc_score,
     classification_report,
-    confusion_matrix
+    confusion_matrix,
+    ConfusionMatrixDisplay
 )
 
 from mlflow.models.signature import infer_signature
@@ -32,6 +36,23 @@ TRAIN_DIR = (
     / "artifacts"
     / "datasets"
 )
+
+ARTIFACT_DIR = (
+    BASE_DIR
+    / "artifacts"
+    / "mlflow_artifacts"
+)
+
+ARTIFACT_DIR.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+# =========================================================
+# DAGSHUB SWITCH
+# =========================================================
+
+USE_DAGSHUB = True
 
 # =========================================================
 # ARGUMENT PARSER
@@ -63,9 +84,33 @@ args = parser.parse_args()
 # SETUP MLFLOW
 # =========================================================
 
-mlflow.set_tracking_uri(
-    "http://127.0.0.1:5000"
-)
+if USE_DAGSHUB:
+
+    dagshub.init(
+        repo_owner="Wlnfadhil",
+        repo_name="SMSML_WildanFadhilNazaruddin_Dicoding",
+        mlflow=True
+    )
+
+    mlflow.set_tracking_uri(
+        "https://dagshub.com/Wlnfadhil/SMSML_WildanFadhilNazaruddin_Dicoding.mlflow"
+    )
+
+    print("\nUsing DagsHub MLflow Tracking")
+
+else:
+
+    mlflow.set_tracking_uri(
+        "http://127.0.0.1:5000"
+    )
+
+    print("\nUsing Local MLflow Tracking")
+
+print("\nTracking URI:")
+print(mlflow.get_tracking_uri())
+
+print("\nUSE_DAGSHUB:")
+print(USE_DAGSHUB)
 
 mlflow.set_experiment(
     "smsml-experiment"
@@ -228,12 +273,12 @@ with mlflow.start_run():
 
     print("\n===== CONFUSION MATRIX =====")
 
-    print(
-        confusion_matrix(
-            y_test,
-            y_pred
-        )
+    cm = confusion_matrix(
+        y_test,
+        y_pred
     )
+
+    print(cm)
 
     # =====================================================
     # LOG PARAMETERS
@@ -289,6 +334,72 @@ with mlflow.start_run():
     )
 
     # =====================================================
+    # SAVE METRIC INFO JSON
+    # =====================================================
+
+    metric_info = {
+        "accuracy": accuracy,
+        "precision": precision,
+        "recall": recall,
+        "f1_score": f1,
+        "roc_auc": roc_auc
+    }
+
+    metric_path = (
+        ARTIFACT_DIR
+        / "metric_info.json"
+    )
+
+    with open(metric_path, "w") as f:
+
+        json.dump(
+            metric_info,
+            f,
+            indent=4
+        )
+
+    mlflow.log_artifact(
+        str(metric_path)
+    )
+
+    print("\nmetric_info.json berhasil disimpan.")
+
+    # =====================================================
+    # SAVE CONFUSION MATRIX IMAGE
+    # =====================================================
+
+    fig, ax = plt.subplots(
+        figsize=(8, 6)
+    )
+
+    disp = ConfusionMatrixDisplay(
+        confusion_matrix=cm
+    )
+
+    disp.plot(ax=ax)
+
+    plt.title(
+        "Training Confusion Matrix"
+    )
+
+    cm_path = (
+        ARTIFACT_DIR
+        / "training_confusion_matrix.png"
+    )
+
+    plt.savefig(cm_path)
+
+    plt.close()
+
+    mlflow.log_artifact(
+        str(cm_path)
+    )
+
+    print(
+        "\ntraining_confusion_matrix.png berhasil disimpan."
+    )
+
+    # =====================================================
     # MODEL SIGNATURE
     # =====================================================
 
@@ -307,7 +418,9 @@ with mlflow.start_run():
         signature=signature
     )
 
-    print("\nModel berhasil di-log ke MLflow.")
+    print(
+        "\nModel berhasil di-log ke MLflow."
+    )
 
     print(
         "\nMLflow tracking completed successfully."
@@ -317,9 +430,12 @@ with mlflow.start_run():
 # RUN EXAMPLE
 # =========================================================
 
+# DagsHub mode
 # python Membangun_model/modelling.py
+
+# Localhost mode
+# ubah:
+# USE_DAGSHUB = False
 #
-# python Membangun_model/modelling.py \
-# --n_estimators 300 \
-# --max_depth 15 \
-# --learning_rate 0.05
+# lalu jalankan:
+# python Membangun_model/modelling.py
