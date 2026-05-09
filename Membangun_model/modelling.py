@@ -52,7 +52,7 @@ ARTIFACT_DIR.mkdir(
 # DAGSHUB SWITCH
 # =========================================================
 
-USE_DAGSHUB = True
+USE_DAGSHUB = False
 
 # =========================================================
 # ARGUMENT PARSER
