@@ -83,16 +83,10 @@ if USE_DAGSHUB:
 else:
 
     mlflow.set_tracking_uri(
-        "http://127.0.0.1:5000"
+        "file:./mlruns"
     )
 
-    print("\nUsing Local MLflow Tracking")
-
-print("\nTracking URI:")
-print(mlflow.get_tracking_uri())
-
-print("\nUSE_DAGSHUB:")
-print(USE_DAGSHUB)
+    print("\nUsing Local File MLflow Tracking")
 
 mlflow.set_experiment(
     args.experiment_name
