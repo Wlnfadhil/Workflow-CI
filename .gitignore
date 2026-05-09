@@ -10,3 +10,8 @@ data/processed/
 .DS_Store
 # Kaggle specific files
 kaggle.json
+# Prometheus data directories
+prometheus_data/
+prometheus_data/wal
+prometheus_data/chunks_head
+prometheus_data/queries.active
