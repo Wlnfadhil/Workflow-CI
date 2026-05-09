@@ -1,0 +1,34 @@
+# Workflow CI untuk Submission Dicoding
+
+Link repository GitHub public workflow CI:
+https://github.com/Wlnfadhil/SMSML_WildanFadhilNazaruddin_Dicoding/actions
+
+File workflow yang digunakan:
+.github/workflows/mlflow-ci.yml
+
+Tahapan workflow:
+
+1. Checkout repository source code.
+2. Setup Python 3.12 environment.
+3. Install seluruh dependency dari requirements.txt.
+4. Menjalankan preprocessing dataset otomatis.
+5. Menjalankan baseline training menggunakan MLflow local tracking.
+6. Menjalankan hyperparameter tuning menggunakan MLflow local tracking.
+7. Upload artifact preprocessing, model, dan folder mlruns sebagai GitHub Actions artifact.
+
+Artifact yang dihasilkan:
+
+* preprocessing/artifacts/
+* mlruns/
+
+GitHub Secrets yang digunakan:
+
+* DAGSHUB_REPO_OWNER
+* DAGSHUB_REPO_NAME
+* DAGSHUB_USER_TOKEN
+
+Catatan:
+
+* Repository dibuat public agar dapat diperiksa reviewer.
+* Seluruh credential disimpan menggunakan GitHub Secrets.
+* Tidak ada token/password yang ditulis langsung di repository.
