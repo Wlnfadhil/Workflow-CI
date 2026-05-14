@@ -1,7 +1,10 @@
 from pathlib import Path
 import pandas as pd
+import json
+import joblib
+
 from sklearn.model_selection import train_test_split
-from imblearn.over_sampling import RandomOverSampler
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 # =========================================================
 # CONFIGURATION
@@ -11,11 +14,19 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 DATA_PATH = (
     BASE_DIR
-    / "preprocessing"
-    / "student_performance_processed_preprocessing.csv"
+    / "data"
+    / "student_performance_data.csv"
 )
 
-OUTPUT_DIR = BASE_DIR / "artifacts" / "datasets"
+ARTIFACT_DIR = (
+    BASE_DIR
+    / "preprocessing"
+    / "artifacts"
+)
+
+DATASET_DIR = ARTIFACT_DIR / "datasets"
+ENCODER_DIR = ARTIFACT_DIR / "encoders"
+METADATA_DIR = ARTIFACT_DIR / "metadata"
 
 TARGET_COLUMN = "grade"
 
@@ -23,141 +34,196 @@ TEST_SIZE = 0.2
 RANDOM_STATE = 42
 
 # =========================================================
+# CREATE DIRECTORIES
+# =========================================================
+
+DATASET_DIR.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+ENCODER_DIR.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+METADATA_DIR.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+# =========================================================
 # LOAD DATASET
 # =========================================================
 
-def load_dataset(path: Path) -> pd.DataFrame:
-    """
-    Load processed dataset.
-    """
+print("\nLoading raw dataset...")
 
-    if not path.exists():
-        raise FileNotFoundError(f"Dataset tidak ditemukan: {path}")
+df = pd.read_csv(DATA_PATH)
 
-    df = pd.read_csv(path)
-
-    print("\nDataset berhasil dimuat.")
-    print(f"Shape dataset: {df.shape}")
-
-    return df
+print("\nDataset berhasil dimuat.")
+print(df.head())
 
 # =========================================================
-# SPLIT FEATURES & TARGET
+# ENCODE CATEGORICAL FEATURES
 # =========================================================
 
-def split_features_target(df: pd.DataFrame):
-    """
-    Memisahkan fitur dan target.
-    """
+categorical_columns = [
+    "gender",
+    "internet_access",
+    "extra_classes",
+    "parent_education"
+]
 
-    X = df.drop(columns=[TARGET_COLUMN])
-    y = df[TARGET_COLUMN]
+feature_encoders = {}
 
-    return X, y
+for col in categorical_columns:
+
+    encoder = LabelEncoder()
+
+    df[col] = encoder.fit_transform(
+        df[col]
+    )
+
+    feature_encoders[col] = encoder
+
+print("\nFeature categorical berhasil di-encode.")
+
+# =========================================================
+# ENCODE TARGET
+# =========================================================
+
+target_encoder = LabelEncoder()
+
+df[TARGET_COLUMN] = target_encoder.fit_transform(
+    df[TARGET_COLUMN]
+)
+
+print("\nTarget berhasil di-encode.")
+
+# =========================================================
+# SPLIT FEATURE & TARGET
+# =========================================================
+
+X = df.drop(columns=[TARGET_COLUMN])
+y = df[TARGET_COLUMN]
 
 # =========================================================
 # TRAIN TEST SPLIT
 # =========================================================
 
-def split_train_test(X, y):
-    """
-    Membagi dataset menjadi train dan test.
-    """
+X_train, X_test, y_train, y_test = train_test_split(
+    X,
+    y,
+    test_size=TEST_SIZE,
+    random_state=RANDOM_STATE,
+    stratify=y
+)
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X,
-        y,
-        test_size=TEST_SIZE,
-        random_state=RANDOM_STATE,
-        stratify=y
+print("\nDataset berhasil dibagi.")
+
+# =========================================================
+# SCALING NUMERIC FEATURES
+# =========================================================
+
+numeric_columns = [
+    "study_hours_per_day",
+    "attendance_percentage",
+    "assignment_score",
+    "midterm_score",
+    "final_exam_score",
+    "participation_score",
+    "sleep_hours"
+]
+
+scaler = StandardScaler()
+
+X_train[numeric_columns] = scaler.fit_transform(
+    X_train[numeric_columns]
+)
+
+X_test[numeric_columns] = scaler.transform(
+    X_test[numeric_columns]
+)
+
+print("\nScaling berhasil dilakukan.")
+
+# =========================================================
+# SAVE DATASETS
+# =========================================================
+
+X_train.to_csv(
+    DATASET_DIR / "X_train.csv",
+    index=False
+)
+
+X_test.to_csv(
+    DATASET_DIR / "X_test.csv",
+    index=False
+)
+
+y_train.to_csv(
+    DATASET_DIR / "y_train.csv",
+    index=False
+)
+
+y_test.to_csv(
+    DATASET_DIR / "y_test.csv",
+    index=False
+)
+
+print("\nDataset artifacts berhasil disimpan.")
+
+# =========================================================
+# SAVE ENCODERS
+# =========================================================
+
+joblib.dump(
+    feature_encoders,
+    ENCODER_DIR / "feature_label_encoders.pkl"
+)
+
+joblib.dump(
+    target_encoder,
+    ENCODER_DIR / "target_label_encoder.pkl"
+)
+
+joblib.dump(
+    scaler,
+    ENCODER_DIR / "scaler.joblib"
+)
+
+print("\nEncoder dan scaler berhasil disimpan.")
+
+# =========================================================
+# SAVE METADATA
+# =========================================================
+
+metadata = {
+
+    "feature_columns":
+        X.columns.tolist(),
+
+    "categorical_columns":
+        categorical_columns,
+
+    "numeric_columns":
+        numeric_columns,
+
+    "target_classes":
+        target_encoder.classes_.tolist()
+}
+
+with open(
+    METADATA_DIR / "preprocessing_metadata.json",
+    "w"
+) as file:
+
+    json.dump(
+        metadata,
+        file,
+        indent=4
     )
 
-    print("\nData berhasil dibagi.")
-    print(f"Training data : {X_train.shape}")
-    print(f"Testing data  : {X_test.shape}")
+print("\nMetadata berhasil disimpan.")
 
-    return X_train, X_test, y_train, y_test
-
-# =========================================================
-# OVERSAMPLING
-# =========================================================
-
-def oversampling_data(X_train, y_train):
-    """
-    Melakukan oversampling hanya pada data training.
-    """
-
-    oversampler = RandomOverSampler(random_state=RANDOM_STATE)
-
-    X_train_resampled, y_train_resampled = oversampler.fit_resample(
-        X_train,
-        y_train
-    )
-
-    print("\nOversampling berhasil dilakukan.")
-    print(f"Shape X_train setelah oversampling: {X_train_resampled.shape}")
-
-    return X_train_resampled, y_train_resampled
-
-# =========================================================
-# SAVE DATASET
-# =========================================================
-
-def save_dataset(
-    X_train,
-    X_test,
-    y_train,
-    y_test
-):
-    """
-    Menyimpan dataset hasil preprocessing.
-    """
-
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-    X_train.to_csv(OUTPUT_DIR / "X_train.csv", index=False)
-    X_test.to_csv(OUTPUT_DIR / "X_test.csv", index=False)
-
-    y_train.to_csv(OUTPUT_DIR / "y_train.csv", index=False)
-    y_test.to_csv(OUTPUT_DIR / "y_test.csv", index=False)
-
-    print("\nDataset berhasil disimpan.")
-    print(f"Lokasi penyimpanan: {OUTPUT_DIR}")
-
-# =========================================================
-# MAIN PIPELINE
-# =========================================================
-
-def main():
-
-    # load dataset
-    df = load_dataset(DATA_PATH)
-
-    # split fitur dan target
-    X, y = split_features_target(df)
-
-    # train test split
-    X_train, X_test, y_train, y_test = split_train_test(X, y)
-
-    # oversampling training data
-    X_train_resampled, y_train_resampled = oversampling_data(
-        X_train,
-        y_train
-    )
-
-    # save dataset
-    save_dataset(
-        X_train_resampled,
-        X_test,
-        y_train_resampled,
-        y_test
-    )
-
-    print("\nPreprocessing automation completed successfully.")
-
-# =========================================================
-# ENTRY POINT
-# =========================================================
-
-if __name__ == "__main__":
-    main()
+print("\nPreprocessing automation completed successfully.")

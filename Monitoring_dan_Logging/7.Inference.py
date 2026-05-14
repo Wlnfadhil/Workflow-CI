@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
+
 from pathlib import Path
 from typing import Any
 
@@ -24,92 +25,102 @@ from pydantic import BaseModel, Field
 from starlette.responses import Response
 
 # =========================================================
-# PATH CONFIG
+# PATH CONFIGURATION
 # =========================================================
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-TARGET_ENCODER_PATH = Path(
-    os.getenv(
-        "TARGET_ENCODER_PATH",
-        str(
-            BASE_DIR
-            / "preprocessing"
-            / "artifacts"
-            / "encoders"
-            / "target_label_encoder.pkl"
-        )
-    )
-)
-
-ENCODER_PATH = Path(
-    os.getenv(
-        "ENCODER_PATH",
-        str(
-            BASE_DIR
-            / "preprocessing"
-            / "artifacts"
-            / "encoders"
-            / "feature_label_encoders.pkl"
-        )
-    )
+ARTIFACT_DIR = (
+    BASE_DIR
+    / "preprocessing"
+    / "artifacts"
 )
 
 MODEL_PATH = Path(
     os.getenv(
         "MODEL_PATH",
         str(
-            BASE_DIR
-            / "preprocessing"
-            / "artifacts"
+            ARTIFACT_DIR
             / "models"
-            / "best_xgboost.pkl"
+            / "best_model.joblib"
+        )
+    )
+)
+
+FEATURE_ENCODER_PATH = Path(
+    os.getenv(
+        "FEATURE_ENCODER_PATH",
+        str(
+            ARTIFACT_DIR
+            / "encoders"
+            / "feature_label_encoders.pkl"
+        )
+    )
+)
+
+TARGET_ENCODER_PATH = Path(
+    os.getenv(
+        "TARGET_ENCODER_PATH",
+        str(
+            ARTIFACT_DIR
+            / "encoders"
+            / "target_label_encoder.pkl"
+        )
+    )
+)
+
+SCALER_PATH = Path(
+    os.getenv(
+        "SCALER_PATH",
+        str(
+            ARTIFACT_DIR
+            / "encoders"
+            / "scaler.joblib"
         )
     )
 )
 
 METADATA_PATH = Path(
     os.getenv(
-        "PREPROCESSING_METADATA_PATH",
+        "METADATA_PATH",
         str(
-            BASE_DIR
-            / "preprocessing"
-            / "artifacts"
+            ARTIFACT_DIR
             / "metadata"
             / "preprocessing_metadata.json"
         )
     )
 )
+
 # =========================================================
 # PROMETHEUS METRICS
 # =========================================================
 
 REQUEST_COUNT = Counter(
     "smsml_inference_requests_total",
-    "Total inference requests received by API.",
-    ["endpoint", "status"],
+    "Total inference requests.",
+    ["endpoint", "status"]
 )
 
 REQUEST_LATENCY = Histogram(
     "smsml_inference_latency_seconds",
-    "Inference request latency in seconds.",
-    ["endpoint"],
+    "Inference latency in seconds.",
+    ["endpoint"]
 )
 
 PREDICTION_COUNT = Counter(
     "smsml_prediction_count_total",
-    "Total predictions by predicted grade.",
-    ["grade"],
+    "Total predictions by class.",
+    ["grade"]
 )
 
 MODEL_LOADED = Gauge(
     "smsml_model_loaded",
-    "Model loading status.",
+    "Model loading status."
 )
 
 FEATURE_COUNT = Gauge(
     "smsml_feature_count",
-    "Number of feature columns used for inference.",
+    "Total feature columns."
 )
 
 # =========================================================
@@ -168,9 +179,9 @@ class PredictionResponse(BaseModel):
 
     prediction: str
 
-    model_path: str
-
     latency_seconds: float
+
+    model_path: str
 
 # =========================================================
 # LOAD METADATA
@@ -181,27 +192,31 @@ def load_metadata() -> dict[str, Any]:
     if not METADATA_PATH.exists():
 
         raise FileNotFoundError(
-            f"Metadata tidak ditemukan: {METADATA_PATH}"
+            f"Metadata tidak ditemukan:\n{METADATA_PATH}"
         )
 
-    with METADATA_PATH.open(
+    with open(
+        METADATA_PATH,
+        "r",
         encoding="utf-8"
     ) as file:
 
-        return json.load(file)
+        metadata = json.load(file)
+
+    return metadata
 
 # =========================================================
 # LOAD MODEL
 # =========================================================
 
-def load_model() -> Any:
+def load_model():
 
     if not MODEL_PATH.exists():
 
         MODEL_LOADED.set(0)
 
         raise FileNotFoundError(
-            f"Model tidak ditemukan: {MODEL_PATH}"
+            f"Model tidak ditemukan:\n{MODEL_PATH}"
         )
 
     model = joblib.load(MODEL_PATH)
@@ -214,16 +229,22 @@ def load_model() -> Any:
 # LOAD ASSETS
 # =========================================================
 
+print("\nLoading artifacts...")
+
 metadata = load_metadata()
 
 model = load_model()
 
 feature_encoders = joblib.load(
-    ENCODER_PATH
+    FEATURE_ENCODER_PATH
 )
 
 target_encoder = joblib.load(
     TARGET_ENCODER_PATH
+)
+
+scaler = joblib.load(
+    SCALER_PATH
 )
 
 feature_columns = metadata["feature_columns"]
@@ -236,10 +257,9 @@ FEATURE_COUNT.set(
     len(feature_columns)
 )
 
-print("\nModel berhasil dimuat.")
-print(f"Model path : {MODEL_PATH}")
+print("\nArtifacts berhasil dimuat.")
 
-print("\nMetadata berhasil dimuat.")
+print(f"Model path : {MODEL_PATH}")
 print(f"Metadata path : {METADATA_PATH}")
 
 # =========================================================
@@ -249,7 +269,7 @@ print(f"Metadata path : {METADATA_PATH}")
 app = FastAPI(
     title="SMSML Student Performance API",
     description="Inference API with Prometheus Monitoring",
-    version="1.0.0",
+    version="1.0.0"
 )
 
 # =========================================================
@@ -260,7 +280,7 @@ def payload_to_features(
     payload: StudentPayload
 ) -> pd.DataFrame:
 
-    payload_dict = payload.dict()
+    payload_dict = payload.model_dump()
 
     row: dict[str, Any] = {}
 
@@ -268,6 +288,7 @@ def payload_to_features(
 
         value = payload_dict[column]
 
+        # categorical encoding
         if column in categorical_columns:
 
             encoder = feature_encoders[column]
@@ -278,10 +299,17 @@ def payload_to_features(
 
         row[column] = value
 
-    return pd.DataFrame(
+    features = pd.DataFrame(
         [row],
         columns=feature_columns
     )
+
+    # scaling numeric features
+    features[numeric_columns] = scaler.transform(
+        features[numeric_columns]
+    )
+
+    return features
 
 # =========================================================
 # ROOT ENDPOINT
@@ -296,14 +324,20 @@ def root():
     ).inc()
 
     return {
-        "service": (
-            "SMSML Student Performance "
-            "Inference API"
-        ),
-        "status": "running",
-        "docs": "/docs",
-        "metrics": "/metrics",
-        "health": "/health"
+        "service":
+            "SMSML Student Performance API",
+
+        "status":
+            "running",
+
+        "docs":
+            "/docs",
+
+        "health":
+            "/health",
+
+        "metrics":
+            "/metrics"
     }
 
 # =========================================================
@@ -319,12 +353,18 @@ def health():
     ).inc()
 
     return {
-        "status": "ok",
-        "model_loaded": int(
-            MODEL_LOADED._value.get()
-        ),
-        "model_path": str(MODEL_PATH),
-        "feature_count": len(feature_columns),
+
+        "status":
+            "healthy",
+
+        "model_loaded":
+            True,
+
+        "model_path":
+            str(MODEL_PATH),
+
+        "feature_count":
+            len(feature_columns)
     }
 
 # =========================================================
@@ -337,11 +377,11 @@ def health():
 )
 def predict(
     payload: StudentPayload
-) -> PredictionResponse:
-
-    start_time = time.perf_counter()
+):
 
     endpoint = "/predict"
+
+    start_time = time.perf_counter()
 
     try:
 
@@ -349,17 +389,22 @@ def predict(
             endpoint=endpoint
         ).time():
 
+            # preprocessing
             features = payload_to_features(
                 payload
             )
 
+            # prediction
             prediction_encoded = model.predict(
                 features
             )[0]
 
-            prediction = target_encoder.inverse_transform(
-                [prediction_encoded]
-            )[0]
+            # inverse transform target
+            prediction = (
+                target_encoder.inverse_transform(
+                    [prediction_encoded]
+                )[0]
+            )
 
         latency = (
             time.perf_counter()
@@ -372,16 +417,19 @@ def predict(
         ).inc()
 
         PREDICTION_COUNT.labels(
-            grade=prediction
+            grade=str(prediction)
         ).inc()
 
         return PredictionResponse(
+
             prediction=str(prediction),
-            model_path=str(MODEL_PATH),
+
             latency_seconds=round(
                 latency,
                 4
             ),
+
+            model_path=str(MODEL_PATH)
         )
 
     except Exception as error:

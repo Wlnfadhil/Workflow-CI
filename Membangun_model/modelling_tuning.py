@@ -1,15 +1,13 @@
-import argparse
-import json
 from pathlib import Path
+import json
 
 import dagshub
 import mlflow
 import mlflow.sklearn
+
 import pandas as pd
 
 from xgboost import XGBClassifier
-
-from sklearn.preprocessing import LabelEncoder
 
 from sklearn.metrics import (
     accuracy_score,
@@ -25,14 +23,16 @@ from sklearn.metrics import (
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-TRAIN_DIR = (
+DATASET_DIR = (
     BASE_DIR
+    / "preprocessing"
     / "artifacts"
     / "datasets"
 )
 
 ARTIFACT_DIR = (
     BASE_DIR
+    / "preprocessing"
     / "artifacts"
     / "tuning_artifacts"
 )
@@ -42,164 +42,54 @@ ARTIFACT_DIR.mkdir(
     exist_ok=True
 )
 
-# =========================================================
-# DAGSHUB SWITCH
-# =========================================================
-
-USE_DAGSHUB = False
+EXPERIMENT_NAME = "smsml-xgboost-tuning"
 
 # =========================================================
-# ARGUMENT PARSER
+# DAGSHUB MLFLOW SETUP
 # =========================================================
 
-parser = argparse.ArgumentParser()
-
-parser.add_argument(
-    "--experiment_name",
-    type=str,
-    default="smsml-tuning"
+dagshub.init(
+    repo_owner="Wlnfadhil",
+    repo_name="SMSML_WildanFadhilNazaruddin_Dicoding",
+    mlflow=True
 )
 
-args = parser.parse_args()
-
-# =========================================================
-# SETUP MLFLOW
-# =========================================================
-
-if USE_DAGSHUB:
-
-    dagshub.init(
-        repo_owner="Wlnfadhil",
-        repo_name="SMSML_WildanFadhilNazaruddin_Dicoding",
-        mlflow=True
-    )
-
-    mlflow.set_tracking_uri(
-        "https://dagshub.com/Wlnfadhil/SMSML_WildanFadhilNazaruddin_Dicoding.mlflow"
-    )
-
-    print("\nUsing DagsHub MLflow Tracking")
-
-else:
-
-    mlflow.set_tracking_uri(
-        "file:./mlruns"
-    )
-
-    print("\nUsing Local File MLflow Tracking")
+mlflow.set_tracking_uri(
+    "https://dagshub.com/Wlnfadhil/SMSML_WildanFadhilNazaruddin_Dicoding.mlflow"
+)
 
 mlflow.set_experiment(
-    args.experiment_name
+    EXPERIMENT_NAME
 )
 
+print("\nUsing DagsHub MLflow Tracking")
+
 # =========================================================
-# LOAD DATASET
+# LOAD DATASET ARTIFACTS
 # =========================================================
 
-print("\nLoading tuning artifacts...")
+print("\nLoading preprocessing artifacts...")
 
 X_train = pd.read_csv(
-    TRAIN_DIR / "X_train.csv"
+    DATASET_DIR / "X_train.csv"
 )
 
 X_test = pd.read_csv(
-    TRAIN_DIR / "X_test.csv"
+    DATASET_DIR / "X_test.csv"
 )
 
 y_train = pd.read_csv(
-    TRAIN_DIR / "y_train.csv"
+    DATASET_DIR / "y_train.csv"
 ).squeeze()
 
 y_test = pd.read_csv(
-    TRAIN_DIR / "y_test.csv"
+    DATASET_DIR / "y_test.csv"
 ).squeeze()
 
 print("\nDataset berhasil dimuat.")
 print(f"X_train : {X_train.shape}")
 print(f"X_test  : {X_test.shape}")
 
-# =========================================================
-# ENCODE TARGET
-# =========================================================
-
-label_encoder = LabelEncoder()
-
-y_train = label_encoder.fit_transform(
-    y_train
-)
-
-y_test = label_encoder.transform(
-    y_test
-)
-
-print("\nTarget berhasil di-encode.")
-
-# =========================================================
-# ENCODE CATEGORICAL FEATURES
-# =========================================================
-
-cat_cols = X_train.select_dtypes(
-    include=["object"]
-).columns
-
-for col in cat_cols:
-
-    encoder = LabelEncoder()
-
-    X_train[col] = encoder.fit_transform(
-        X_train[col]
-    )
-
-    X_test[col] = encoder.transform(
-        X_test[col]
-    )
-
-print("\nCategorical features berhasil di-encode.")
-# =========================================================
-# SAVE PREPROCESSING METADATA
-# =========================================================
-
-metadata_dir = (
-    BASE_DIR
-    / "preprocessing"
-    / "artifacts"
-    / "metadata"
-)
-
-metadata_dir.mkdir(
-    parents=True,
-    exist_ok=True
-)
-
-metadata = {
-
-    "feature_columns":
-        X_train.columns.tolist(),
-
-    "categorical_columns":
-        cat_cols.tolist()
-}
-
-metadata_path = (
-    metadata_dir
-    / "preprocessing_metadata.json"
-)
-
-with open(
-    metadata_path,
-    "w",
-    encoding="utf-8"
-) as file:
-
-    json.dump(
-        metadata,
-        file,
-        indent=4
-    )
-
-print(
-    "\npreprocessing_metadata.json berhasil disimpan."
-)
 # =========================================================
 # HYPERPARAMETER SEARCH SPACE
 # =========================================================
@@ -251,9 +141,9 @@ for n_estimators in n_estimators_list:
                 run_name=run_name
             ):
 
-                print("\n===================================")
+                print("\n" + "=" * 50)
                 print(f"Training : {run_name}")
-                print("===================================")
+                print("=" * 50)
 
                 # =====================================
                 # MODEL
@@ -332,7 +222,7 @@ for n_estimators in n_estimators_list:
                 print(f"ROC AUC   : {roc_auc:.4f}")
 
                 # =====================================
-                # LOG PARAMETERS
+                # MANUAL LOGGING PARAMETERS
                 # =====================================
 
                 mlflow.log_param(
@@ -356,7 +246,7 @@ for n_estimators in n_estimators_list:
                 )
 
                 # =====================================
-                # LOG METRICS
+                # MANUAL LOGGING METRICS
                 # =====================================
 
                 mlflow.log_metric(
@@ -385,6 +275,15 @@ for n_estimators in n_estimators_list:
                 )
 
                 # =====================================
+                # LOG MODEL
+                # =====================================
+
+                mlflow.sklearn.log_model(
+                    sk_model=model,
+                    artifact_path="model"
+                )
+
+                # =====================================
                 # SAVE BEST CONFIGURATION
                 # =====================================
 
@@ -393,18 +292,34 @@ for n_estimators in n_estimators_list:
                     best_accuracy = accuracy
 
                     best_configuration = {
-                        "n_estimators": n_estimators,
-                        "max_depth": max_depth,
-                        "learning_rate": learning_rate,
-                        "accuracy": accuracy,
-                        "precision": precision,
-                        "recall": recall,
-                        "f1_score": f1,
-                        "roc_auc": roc_auc
+
+                        "n_estimators":
+                            n_estimators,
+
+                        "max_depth":
+                            max_depth,
+
+                        "learning_rate":
+                            learning_rate,
+
+                        "accuracy":
+                            accuracy,
+
+                        "precision":
+                            precision,
+
+                        "recall":
+                            recall,
+
+                        "f1_score":
+                            f1,
+
+                        "roc_auc":
+                            roc_auc
                     }
 
 # =========================================================
-# SAVE BEST CONFIGURATION
+# SAVE BEST CONFIGURATION JSON
 # =========================================================
 
 best_config_path = (
@@ -412,13 +327,18 @@ best_config_path = (
     / "best_tuning_configuration.json"
 )
 
-with open(best_config_path, "w") as f:
+with open(
+    best_config_path,
+    "w"
+) as file:
 
     json.dump(
         best_configuration,
-        f,
+        file,
         indent=4
     )
+
+print("\nBest tuning configuration disimpan.")
 
 # =========================================================
 # LOG ADDITIONAL ARTIFACT
@@ -436,31 +356,10 @@ with mlflow.start_run(
 # FINAL RESULT
 # =========================================================
 
-print("\n===================================")
+print("\n" + "=" * 50)
 print("BEST TUNING CONFIGURATION")
-print("===================================")
+print("=" * 50)
 
 print(best_configuration)
 
-print(
-    "\nBest tuning configuration "
-    "berhasil disimpan."
-)
-
-print(
-    "\nMLflow tuning completed successfully."
-)
-
-# =========================================================
-# RUN EXAMPLE
-# =========================================================
-
-# DagsHub mode
-# python Membangun_model/modelling_tuning.py
-
-# Localhost mode
-# ubah:
- # USE_DAGSHUB = False
-#
-# lalu jalankan:
-# python Membangun_model/modelling_tuning.py
+print("\nMLflow tuning completed successfully.")
