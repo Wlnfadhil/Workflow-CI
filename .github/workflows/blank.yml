@@ -1,4 +1,4 @@
-nname: SMSML CI Pipeline
+name: SMSML CI Pipeline
 
 on:
   push:
@@ -7,147 +7,100 @@ on:
 
 jobs:
   mlops-pipeline:
-
     runs-on: ubuntu-latest
 
     steps:
 
-      - name: Run actions/checkout@v3
-        uses: actions/checkout@v3
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-    # =====================================================
-    # SETUP PYTHON
-    # =====================================================
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
 
-    - name: Set up Python 3.12.7
-      uses: actions/setup-python@v5
-      with:
-        python-version: "3.12.7"
+      - name: Check Environment
+        run: |
+          python --version
+          pip --version
+          pwd
+          ls
 
-    # =====================================================
-    # CHECK ENV
-    # =====================================================
+      - name: Install Dependencies
+        run: |
+          pip install --upgrade pip
 
-    - name: Check Env
-      run: |
-        python --version
-        pip --version
-        pwd
-        ls
+          pip install -r requirements.txt
 
-    # =====================================================
-    # INSTALL DEPENDENCIES
-    # =====================================================
+          if [ -f Membangun_model/requirements.txt ]; then
+            pip install -r Membangun_model/requirements.txt
+          fi
 
-    - name: Install dependencies
-      run: |
-        pip install --upgrade pip
-        pip install -r requirements.txt
+      - name: Install MLflow Dependencies
+        run: |
+          pip install mlflow
+          pip install docker
+          pip install virtualenv
 
-        if [ -f Membangun_model/requirements.txt ]; then
-          pip install -r Membangun_model/requirements.txt
-        fi
+      - name: Run MLflow Modelling
+        env:
+          MLFLOW_TRACKING_URI: sqlite:///mlflow.db
+        run: |
+          python Membangun_model/modelling.py
 
-    # =====================================================
-    # RUN MLFLOW PROJECT
-    # =====================================================
+      - name: Check MLflow Artifacts
+        run: |
+          ls
+          ls mlartifacts || true
+          ls mlruns || true
 
-    - name: Run mlflow project
-      env:
-        MLFLOW_TRACKING_URI: sqlite:///mlflow.db
-      run: |
-        python Membangun_model/modelling.py
+      - name: Upload MLflow Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: smsml-mlflow-artifacts
+          path: |
+            mlruns/
+            mlartifacts/
+            preprocessing/artifacts/
 
-    # =====================================================
-    # GET LATEST MLFLOW RUN ID
-    # =====================================================
+      - name: Get Model Path
+        run: |
+          MODEL_PATH=$(find mlartifacts -type d -path "*/artifacts" | head -n 1)
 
-    - name: Get latest MLflow run_id
-      id: get_run_id
-      run: |
-        RUN_ID=$(find mlruns -name meta.yaml | head -n 1 | awk -F'/' '{print $(NF-1)}')
-        echo "RUN_ID=$RUN_ID" >> $GITHUB_ENV
-        echo "Latest MLflow Run ID: $RUN_ID"
+          echo "MODEL_PATH=$MODEL_PATH" >> $GITHUB_ENV
 
-    # =====================================================
-    # INSTALL PYTHON DEPENDENCIES
-    # =====================================================
+          echo "Detected Model Path:"
+          echo $MODEL_PATH
 
-    - name: Install Python dependencies
-      run: |
-        pip install mlflow docker
+      - name: Build Docker Model
+        env:
+          MLFLOW_TRACKING_URI: sqlite:///mlflow.db
+        run: |
+          mlflow models build-docker \
+          -m "$MODEL_PATH" \
+          -n "smsml-xgboost:v1" \
+          --env-manager local
 
-    # =====================================================
-    # UPLOAD TO GITHUB ARTIFACT
-    # =====================================================
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
-    - name: Upload to GitHub
-      uses: actions/upload-artifact@v4
-      with:
-        name: smsml-mlflow-artifacts
-        path: |
-          mlruns/
-          mlartifacts/
-          preprocessing/artifacts/
+      - name: Tag Docker Image
+        run: |
+          docker tag smsml-xgboost:v1 \
+          ${{ secrets.DOCKER_USERNAME }}/smsml-xgboost:v1
 
-    # =====================================================
-    # BUILD DOCKER MODEL
-    # =====================================================
+      - name: Push Docker Image
+        run: |
+          docker push \
+          ${{ secrets.DOCKER_USERNAME }}/smsml-xgboost:v1
 
-    - name: Build Docker Model
-      env:
-        MLFLOW_TRACKING_URI: sqlite:///mlflow.db
-      run: |
-        MODEL_PATH=$(find mlartifacts -type d -path "*/artifacts" | head -n 1)
+      - name: Verify Docker Push
+        run: |
+          echo "Docker image pushed successfully"
 
-        echo "Model Path: $MODEL_PATH"
-
-        mlflow models build-docker \
-        -m "$MODEL_PATH" \
-        -n "smsml-xgboost:v1" \
-        --env-manager local
-
-    # =====================================================
-    # LOGIN TO DOCKER HUB
-    # =====================================================
-
-    - name: Log in to Docker Hub
-      uses: docker/login-action@v3
-      with:
-        username: ${{ secrets.DOCKER_USERNAME }}
-        password: ${{ secrets.DOCKER_PASSWORD }}
-
-    # =====================================================
-    # TAG DOCKER IMAGE
-    # =====================================================
-
-    - name: Tag Docker Image
-      run: |
-        docker tag smsml-xgboost:v1 \
-        ${{ secrets.DOCKER_USERNAME }}/smsml-xgboost:v1
-
-    # =====================================================
-    # PUSH DOCKER IMAGE
-    # =====================================================
-
-    - name: Push Docker Image
-      run: |
-        docker push \
-        ${{ secrets.DOCKER_USERNAME }}/smsml-xgboost:v1
-
-    # =====================================================
-    # POST LOG IN TO DOCKER HUB
-    # =====================================================
-
-    - name: Post Log in to Docker Hub
-      run: |
-        echo "Docker image successfully pushed"
-
-    # =====================================================
-    # COMPLETE JOB
-    # =====================================================
-
-    - name: Complete job
-      run: |
-        echo "CI pipeline completed successfully"
-
+      - name: Complete CI Pipeline
+        run: |
+          echo "SMSML CI Pipeline completed successfully"
