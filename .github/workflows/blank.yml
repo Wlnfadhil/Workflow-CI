@@ -108,8 +108,8 @@ jobs:
           echo "=== MLRUNS ==="
           ls -R mlruns
 
-          echo "=== MLARTIFACTS ==="
-          ls -R mlartifacts
+          echo "=== MODEL ARTIFACTS ==="
+          find mlruns -type d -name models
 
       # =====================================================
       # GET LATEST MODEL PATH
@@ -118,9 +118,9 @@ jobs:
       - name: Get Latest Model Path
         run: |
 
-          MODEL_PATH=$(find mlartifacts \
-            -type f \
-            -name "MLmodel" | tail -n 1)
+          MODEL_PATH=$(find mlruns \
+          -type f \
+          -name "MLmodel" | tail -n 1)
 
           MODEL_DIR=$(dirname "$MODEL_PATH")
 
@@ -154,7 +154,8 @@ jobs:
           name: smsml-mlflow-artifacts
           path: |
             mlruns/
-            mlartifacts/
+            path: |
+            mlruns/
             preprocessing/artifacts/
 
       # =====================================================
