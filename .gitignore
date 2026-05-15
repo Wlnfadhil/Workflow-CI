@@ -43,3 +43,16 @@ mlruns/
 __pycache__/
 *.pyc
 .env
+mlflow.db
+mlartifacts/1
+kaggle.json
+Workflow-CI
+Workflow-CI/artifacts
+.vscode
+mlartifacts
+*_confusion_matrix.png
+DecisionTree.pkl
+GaussianNB.pkl
+LogisticRegression.pkl
+RandomForest.pkl
+XGBoost.pkl
