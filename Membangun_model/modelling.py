@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -30,15 +31,18 @@ DATASET_DIR = (
 # =========================================================
 # MLFLOW SETUP
 # =========================================================
+TRACKING_URI = os.getenv(
+    "MLFLOW_TRACKING_URI",
+    "http://127.0.0.1:5000"
+)
 
 mlflow.set_tracking_uri(
-    "http://127.0.0.1:5000"
+    TRACKING_URI
 )
 
 mlflow.set_experiment(
     "smsml-basic-experiment"
 )
-
 # =========================================================
 # AUTOLOG
 # =========================================================
