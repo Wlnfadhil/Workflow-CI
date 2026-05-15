@@ -14,8 +14,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 DATA_PATH = (
     BASE_DIR
-    / "data"
-    / "student_performance_data.csv"
+    / "preprocessing"
+    / "student_performance_processed_preprocessing.csv"
 )
 
 ARTIFACT_DIR = (
