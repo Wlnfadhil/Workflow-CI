@@ -6,6 +6,7 @@ on:
       - main
 
 jobs:
+
   mlops-pipeline:
 
     runs-on: ubuntu-latest
@@ -45,6 +46,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
+
           pip install --upgrade pip
 
           pip install -r requirements.txt
@@ -53,15 +55,38 @@ jobs:
             pip install -r Membangun_model/requirements.txt
           fi
 
-      # =====================================================
-      # INSTALL EXTRA MLFLOW DEPENDENCIES
-      # =====================================================
-
-      - name: Install MLflow Dependencies
-        run: |
           pip install mlflow
           pip install docker
           pip install virtualenv
+
+      # =====================================================
+      # CLEAN OLD ARTIFACTS
+      # =====================================================
+
+      - name: Clean Previous Artifacts
+        run: |
+          rm -rf mlruns || true
+          rm -rf mlartifacts || true
+          rm -f mlflow.db || true
+
+      # =====================================================
+      # RUN PREPROCESSING
+      # =====================================================
+
+      - name: Run Preprocessing Pipeline
+        run: |
+          python preprocessing/automate_WildanFadhilNazaruddin.py
+
+      # =====================================================
+      # VERIFY GENERATED DATASETS
+      # =====================================================
+
+      - name: Verify Generated Datasets
+        run: |
+
+          echo "=== DATASETS ==="
+
+          ls -R preprocessing/artifacts/datasets
 
       # =====================================================
       # RUN MODELLING
@@ -77,16 +102,47 @@ jobs:
       # VERIFY GENERATED ARTIFACTS
       # =====================================================
 
-      - name: Check MLflow Artifacts
+      - name: Verify MLflow Artifacts
         run: |
-          echo "=== ROOT PROJECT ==="
-          ls -la
 
           echo "=== MLRUNS ==="
-          ls -R mlruns || true
+          ls -R mlruns
 
           echo "=== MLARTIFACTS ==="
-          ls -R mlartifacts || true
+          ls -R mlartifacts
+
+      # =====================================================
+      # GET LATEST MODEL PATH
+      # =====================================================
+
+      - name: Get Latest Model Path
+        run: |
+
+          MODEL_PATH=$(find mlartifacts \
+            -type f \
+            -name "MLmodel" | tail -n 1)
+
+          MODEL_DIR=$(dirname "$MODEL_PATH")
+
+          echo "MODEL_DIR=$MODEL_DIR" >> $GITHUB_ENV
+
+          echo "Detected Model Directory:"
+          echo "$MODEL_DIR"
+
+      # =====================================================
+      # VERIFY MODEL REQUIREMENTS
+      # =====================================================
+
+      - name: Verify Model Requirements
+        run: |
+
+          echo "=== REQUIREMENTS ==="
+
+          cat $MODEL_DIR/requirements.txt
+
+          echo "=== CONDA YAML ==="
+
+          cat $MODEL_DIR/conda.yaml
 
       # =====================================================
       # UPLOAD ARTIFACTS
@@ -102,20 +158,12 @@ jobs:
             preprocessing/artifacts/
 
       # =====================================================
-      # GET LATEST MODEL PATH
+      # CLEAN DOCKER CACHE
       # =====================================================
 
-      - name: Get Latest Model Path
+      - name: Clean Docker Cache
         run: |
-
-          MODEL_PATH=$(find mlartifacts \
-          -type d \
-          -path "*/artifacts" | sort | tail -n 1)
-
-          echo "MODEL_PATH=$MODEL_PATH" >> $GITHUB_ENV
-
-          echo "Detected Model Path:"
-          echo "$MODEL_PATH"
+          docker system prune -af || true
 
       # =====================================================
       # BUILD DOCKER IMAGE
@@ -126,16 +174,16 @@ jobs:
           MLFLOW_TRACKING_URI: sqlite:///mlflow.db
         run: |
 
-          echo "Using model path:"
-          echo "$MODEL_PATH"
+          echo "Building Docker from:"
+          echo "$MODEL_DIR"
 
           mlflow models build-docker \
-            -m "$MODEL_PATH" \
+            -m "$MODEL_DIR" \
             -n "smsml-xgboost:v1" \
             --env-manager local
 
       # =====================================================
-      # LOGIN DOCKER HUB
+      # LOGIN TO DOCKER HUB
       # =====================================================
 
       - name: Login to Docker Hub
@@ -145,20 +193,22 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       # =====================================================
-      # TAG IMAGE
+      # TAG DOCKER IMAGE
       # =====================================================
 
       - name: Tag Docker Image
         run: |
+
           docker tag smsml-xgboost:v1 \
           ${{ secrets.DOCKER_USERNAME }}/smsml-xgboost:v1
 
       # =====================================================
-      # PUSH IMAGE
+      # PUSH DOCKER IMAGE
       # =====================================================
 
       - name: Push Docker Image
         run: |
+
           docker push \
           ${{ secrets.DOCKER_USERNAME }}/smsml-xgboost:v1
 
