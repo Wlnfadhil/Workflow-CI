@@ -38,8 +38,8 @@ jobs:
         with:
           activate-environment: base
           auto-activate-base: true
-          python-version: 3.10
-
+          python-version: "3.10"
+          miniconda-version: "latest"
       # =====================================================
       # CHECK ENVIRONMENT
       # =====================================================
