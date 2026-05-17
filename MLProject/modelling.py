@@ -5,6 +5,7 @@ import joblib
 import pandas as pd
 
 import mlflow
+import mlflow.sklearn  # <-- Import tambahan wajib untuk menyimpan MLmodel
 
 import matplotlib.pyplot as plt
 
@@ -21,9 +22,9 @@ from sklearn.naive_bayes import GaussianNB
 
 from xgboost import XGBClassifier
 
-# =========================================================
+
 # CONFIGURATION
-# =========================================================
+
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -32,9 +33,9 @@ DATASET_DIR = (
     / "datasets"
 )
 
-# =========================================================
+
 # MLFLOW SETUP
-# =========================================================
+
 
 TRACKING_URI = os.getenv(
     "MLFLOW_TRACKING_URI",
@@ -45,17 +46,17 @@ mlflow.set_tracking_uri(
     TRACKING_URI
 )
 
-# =========================================================
+
 # DISABLE AUTOLOG
-# =========================================================
+
 
 mlflow.autolog(
     disable=True
 )
 
-# =========================================================
+
 # LOAD DATASET
-# =========================================================
+
 
 print("\nLoading dataset artifacts...")
 
@@ -79,9 +80,9 @@ print("\nDataset berhasil dimuat.")
 print(f"X_train : {X_train.shape}")
 print(f"X_test  : {X_test.shape}")
 
-# =========================================================
+
 # MODELS
-# =========================================================
+
 
 models = {
 
@@ -111,9 +112,9 @@ models = {
         )
 }
 
-# =========================================================
+
 # TRAINING LOOP
-# =========================================================
+
 
 for model_name, model in models.items():
 
@@ -121,44 +122,30 @@ for model_name, model in models.items():
     print(f"TRAINING MODEL : {model_name}")
     print("=" * 60)
 
-    # =====================================================
-    # START NESTED RUN
-    # =====================================================
-
     with mlflow.start_run(
         run_name=model_name,
         nested=True
     ):
-
-        # =================================================
-        # TAG
-        # =================================================
 
         mlflow.set_tag(
             "model_name",
             model_name
         )
 
-        # =================================================
-        # TRAINING
-        # =================================================
+
 
         model.fit(
             X_train,
             y_train
         )
 
-        # =================================================
-        # PREDICTION
-        # =================================================
+
 
         y_pred = model.predict(
             X_test
         )
 
-        # =================================================
-        # EVALUATION
-        # =================================================
+
 
         accuracy = accuracy_score(
             y_test,
@@ -169,18 +156,13 @@ for model_name, model in models.items():
             f"Accuracy : {accuracy:.4f}"
         )
 
-        # =================================================
-        # LOG METRICS
-        # =================================================
+
 
         mlflow.log_metric(
             "accuracy",
             accuracy
         )
 
-        # =================================================
-        # CONFUSION MATRIX
-        # =================================================
 
         cm = confusion_matrix(
             y_test,
@@ -208,26 +190,8 @@ for model_name, model in models.items():
         )
 
         plt.close()
-
-        # =================================================
-        # SAVE MODEL MANUALLY
-        # =================================================
-
-        model_path = (
-            f"{model_name}.pkl"
-        )
-
-        joblib.dump(
-            model,
-            model_path
-        )
-
-        # =================================================
-        # LOG MODEL ARTIFACT
-        # =================================================
-
-        mlflow.log_artifact(
-            model_path,
+        mlflow.sklearn.log_model(
+            sk_model=model,
             artifact_path="model"
         )
 
